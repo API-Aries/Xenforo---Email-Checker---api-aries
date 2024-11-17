@@ -3,6 +3,9 @@
 **learn more about the endpoint** :
 https://support.api-aries.online/hc/articles/1/3/3/email-checker
 
+**Get API Token** :
+https://dashboard.api-aries.online/
+
 **Installation Steps** :
 
 src >> XF >> Service >> User >> RegistrationService.php
