@@ -2,14 +2,28 @@
 
 namespace XF\Service\User;
 
+use XF\CustomField\Set;
+use XF\Entity\User;
+use XF\Repository\ChangeLogRepository;
+use XF\Repository\IpRepository;
+use XF\Repository\PreRegActionRepository;
+use XF\Repository\TrophyRepository;
+use XF\Repository\UserGroupPromotionRepository;
+use XF\Repository\UserRepository;
+use XF\Service\AbstractService;
+use XF\Service\ValidateAndSavableTrait;
+use XF\Util\File;
+use XF\Validator\Gravatar;
+use XF\Validator\Url;
+
 use function intval;
 
-class Registration extends \XF\Service\AbstractService
+class RegistrationService extends AbstractService
 {
-	use \XF\Service\ValidateAndSavableTrait;
+	use ValidateAndSavableTrait;
 
 	/**
-	 * @var \XF\Entity\User
+	 * @var User
 	 */
 	protected $user;
 
@@ -31,7 +45,7 @@ class Registration extends \XF\Service\AbstractService
 
 	protected function setup()
 	{
-		$this->user = $this->app->repository('XF:User')->setupBaseUser();
+		$this->user = $this->app->repository(UserRepository::class)->setupBaseUser();
 	}
 
 	public function getUser()
@@ -51,7 +65,7 @@ class Registration extends \XF\Service\AbstractService
 			$value = $input[$inputKey];
 			if (strpos($entityKey, '.'))
 			{
-				list($relation, $relationKey) = explode('.', $entityKey, 2);
+				[$relation, $relationKey] = explode('.', $entityKey, 2);
 				$this->user->{$relation}->{$relationKey} = $value;
 			}
 			else
@@ -84,50 +98,6 @@ class Registration extends \XF\Service\AbstractService
 		$this->user->Auth->setNoPassword();
 		$this->user->Profile->password_date = \XF::$time;
 	}
-	
-	
-	
-	public function setEmail($email)
-    {
-        $this->user->email = $email;
-    }
-
-    public function checkDisposableEmail()
-    {
-        $email = $this->user->email;
-
-        // Make API call to check if email is disposable
-        $apiUrl = 'https://api.api-aries.online/v1/checkers/proxy/email/?email=' . urlencode($email);
-        $headers = [
-            'Type: TOKEN TYPE', // learn more: https://support.api-aries.online/hc/articles/1/3/3/email-checker
-            'APITOKEN: API KEY', // learn more: https://support.api-aries.online/hc/articles/1/3/3/email-checker
-        ];
-
-        $curl = curl_init($apiUrl);
-        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($curl, CURLOPT_HTTPHEADER, $headers);
-        $response = curl_exec($curl);
-        $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-        curl_close($curl);
-
-        if ($httpCode === 200) {
-            $responseData = json_decode($response, true);
-
-            // Check if the email is disposable according to the API response
-            if (isset($responseData['disposable']) && strtolower($responseData['disposable']) === 'yes') {
-                // Email is disposable, handle accordingly
-                $this->user->error(\XF::phrase('disposable_email_address'));
-                return false;
-            } else {
-                return true; // Email is not disposable
-            }
-        } else {
-            // Failed to check disposable email via API
-            $this->user->error(\XF::phrase('disposable_email_check_failed'));
-            return false;
-        }
-    }
-    
 
 	public function setDob($day, $month, $year)
 	{
@@ -136,7 +106,7 @@ class Registration extends \XF\Service\AbstractService
 
 	public function setCustomFields(array $values)
 	{
-		/** @var \XF\CustomField\Set $fieldSet */
+		/** @var Set $fieldSet */
 		$fieldSet = $this->user->Profile->custom_fields;
 
 		$fieldDefinition = $fieldSet->getDefinitionSet()
@@ -192,6 +162,47 @@ class Registration extends \XF\Service\AbstractService
 			$this->setReceiveActivitySummary($input['email_choice']);
 		}
 	}
+	
+	public function setEmail($email)
+    {
+        $this->user->email = $email;
+    }
+
+    public function checkDisposableEmail()
+{
+    $email = $this->user->email;
+
+    // Make API call to check if email is disposable
+    $apiUrl = 'https://api.api-aries.online/v1/checkers/proxy/email/?email=' . urlencode($email);
+    $headers = [
+        'APITOKEN: API KEY', // learn more: https://support.api-aries.online/hc/articles/1/3/3/email-checker 
+    ];
+
+    $curl = curl_init($apiUrl);
+    curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($curl, CURLOPT_HTTPHEADER, $headers);
+    $response = curl_exec($curl);
+    $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+    curl_close($curl);
+
+    if ($httpCode === 200) {
+        $responseData = json_decode($response, true);
+
+        // Check if the email is disposable according to the API response
+        if (isset($responseData['disposable']) && strtolower($responseData['disposable']) === 'yes') {
+            // Email is disposable, handle accordingly
+            $this->user->error(\XF::phrase('Sorry we dont allow disposable email domains to prevent spam'));
+            return false;
+        } else {
+            return true; // Email is not disposable
+        }
+    } else {
+        // Failed to check disposable email via API
+        $this->user->error(\XF::phrase('disposable email checker api issue'));
+        return false;
+    }
+}
+
 
 	public function setReceiveAdminEmail($choice)
 	{
@@ -256,34 +267,31 @@ class Registration extends \XF\Service\AbstractService
 		return $user->getErrors();
 	}
 
+	protected function finalSetup()
+	{
+		$user = $this->user;
 
+		if (!$user->getErrors() && $user->email && !$this->avatarUrl)
+		{
+			if ($this->app->options()->gravatarEnable)
+			{
+				$gravatarValidator = $this->app->validator(Gravatar::class);
+				$gravatar = $gravatarValidator->coerceValue($user->email);
+				if ($gravatarValidator->isValid($gravatar))
+				{
+					$user->gravatar = $gravatar;
+				}
+			}
+		}
 
-protected function finalSetup()
-{
-    $user = $this->user;
-
-    if (!$user->getErrors() && $user->email && !$this->avatarUrl)
-    {
-        if ($this->app->options()->gravatarEnable)
-        {
-            $gravatarValidator = $this->app->validator('Gravatar');
-            $gravatar = $gravatarValidator->coerceValue($user->email);
-            if ($gravatarValidator->isValid($gravatar))
-            {
-                $user->gravatar = $gravatar;
-            }
-        }
-    }
-
-    $this->setInitialUserState();
-    $this->setPolicyAcceptance();
+		$this->setInitialUserState();
+        $this->setPolicyAcceptance();
 
     // Check if email is disposable
     if (!$this->checkDisposableEmail()) {
         return; // Stop registration process if email is disposable
     }
 }
-
 
 	protected function setInitialUserState()
 	{
@@ -367,8 +375,8 @@ protected function finalSetup()
 
 		if ($this->preRegActionKey)
 		{
-			/** @var \XF\Repository\PreRegAction $preRegActionRepo */
-			$preRegActionRepo = $this->repository('XF:PreRegAction');
+			/** @var PreRegActionRepository $preRegActionRepo */
+			$preRegActionRepo = $this->repository(PreRegActionRepository::class);
 			$preRegActionRepo->associateActionWithUser($this->preRegActionKey, $user->user_id);
 		}
 
@@ -397,15 +405,15 @@ protected function finalSetup()
 	{
 		$user = $this->user;
 
-		/** @var \XF\Repository\IP $ipRepo */
-		$ipRepo = $this->repository('XF:Ip');
+		/** @var IpRepository $ipRepo */
+		$ipRepo = $this->repository(IpRepository::class);
 		$ipRepo->logIp($user->user_id, $ip, 'user', $user->user_id, 'register');
 	}
 
 	protected function writeInitialChangeLogs()
 	{
-		/** @var \XF\Repository\ChangeLog $changeLogRepo */
-		$changeLogRepo = $this->repository('XF:ChangeLog');
+		/** @var ChangeLogRepository $changeLogRepo */
+		$changeLogRepo = $this->repository(ChangeLogRepository::class);
 
 		$user = $this->user;
 
@@ -432,14 +440,14 @@ protected function finalSetup()
 
 	protected function updateUserAchievements()
 	{
-		/** @var \XF\Repository\UserGroupPromotion $userGroupPromotionRepo */
-		$userGroupPromotionRepo = $this->repository('XF:UserGroupPromotion');
+		/** @var UserGroupPromotionRepository $userGroupPromotionRepo */
+		$userGroupPromotionRepo = $this->repository(UserGroupPromotionRepository::class);
 		$userGroupPromotionRepo->updatePromotionsForUser($this->user);
 
 		if ($this->app->options()->enableTrophies)
 		{
-			/** @var \XF\Repository\Trophy $trophyRepo */
-			$trophyRepo = $this->repository('XF:Trophy');
+			/** @var TrophyRepository $trophyRepo */
+			$trophyRepo = $this->repository(TrophyRepository::class);
 			$trophyRepo->updateTrophiesForUser($this->user);
 		}
 	}
@@ -450,14 +458,14 @@ protected function finalSetup()
 
 		if ($user->user_state == 'email_confirm')
 		{
-			/** @var \XF\Service\User\EmailConfirmation $emailConfirmation */
-			$emailConfirmation = $this->service('XF:User\EmailConfirmation', $user);
+			/** @var EmailConfirmationService $emailConfirmation */
+			$emailConfirmation = $this->service(EmailConfirmationService::class, $user);
 			$emailConfirmation->triggerConfirmation();
 		}
 		else if ($user->user_state == 'valid')
 		{
-			/** @var \XF\Service\User\RegistrationComplete $regComplete */
-			$regComplete = $this->service('XF:User\RegistrationComplete', $user);
+			/** @var RegistrationCompleteService $regComplete */
+			$regComplete = $this->service(RegistrationCompleteService::class, $user);
 			$regComplete->triggerCompletionActions();
 			$this->preRegContent = $regComplete->getPreRegContent();
 		}
@@ -472,18 +480,19 @@ protected function finalSetup()
 
 		$app = $this->app;
 
-		$validator = $app->validator('Url');
+		$validator = $app->validator(Url::class);
 		$url = $validator->coerceValue($url);
 		if (!$validator->isValid($url))
 		{
 			return false;
 		}
 
-		$tempFile = \XF\Util\File::getTempFile();
+		$tempFile = File::getTempFile();
 		if ($app->http()->reader()->getUntrusted($url, [], $tempFile))
 		{
-			/** @var \XF\Service\User\Avatar $avatarService */
-			$avatarService = $this->service('XF:User\Avatar', $this->user);
+			/** @var AvatarService $avatarService */
+			$avatarService = $this->service(AvatarService::class, $this->user);
+			$avatarService->logIp(false);
 			if (!$avatarService->setImage($tempFile))
 			{
 				return false;
