@@ -5,11 +5,11 @@ https://support.api-aries.online/hc/articles/1/3/3/email-checker
 
 **Installation Steps** :
 
-src >> XF >> Service >> User >> Registration.php
+src >> XF >> Service >> User >> RegistrationService.php
 
 just paste the code
 
-**confirmed to be working on 2.2.15** 
+**confirmed to be working on 2.3.4** 
 
 **Description** 
 
