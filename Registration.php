@@ -173,9 +173,9 @@ class RegistrationService extends AbstractService
     $email = $this->user->email;
 
     // Make API call to check if email is disposable
-    $apiUrl = 'https://api.api-aries.online/v1/checkers/proxy/email/?email=' . urlencode($email);
+    $apiUrl = 'https://api.api-aries.com/v1/checkers/proxy/email/?email=' . urlencode($email);
     $headers = [
-        'APITOKEN: API KEY', // learn more: https://support.api-aries.online/hc/articles/1/3/3/email-checker 
+        'APITOKEN: API KEY', // learn more: https://support.api-aries.com/hc/articles/1/3/3/email-checker 
     ];
 
     $curl = curl_init($apiUrl);
