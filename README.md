@@ -1,10 +1,10 @@
 # Xenforo---Email-Checker---api-aries
 
 **learn more about the endpoint** :
-https://support.api-aries.online/hc/articles/1/3/3/email-checker
+https://support.api-aries.com/hc/articles/1/3/3/email-checker
 
 **Get API Token** :
-https://dashboard.api-aries.online/
+https://dashboard.api-aries.com/
 
 **Installation Steps** :
 
